@@ -1,3 +1,5 @@
+**Work in progress:** Slaude is in early development, the features and design below are planned and may change.
+
 # Slaude
 
 Slaude bridges Slack and a local Claude Code session. Prompt your local Claude from Slack on your phone or anywhere, and get its updates and questions back in the same thread.
