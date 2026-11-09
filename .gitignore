@@ -25,9 +25,17 @@ profile.cov
 go.work
 go.work.sum
 
-# env file
+# Secrets: Slack tokens, pairing tokens
 .env
+.env.*
+!.env.example
 
 # Editor/IDE
-# .idea/
+.idea/
 # .vscode/
+
+# Build output
+/bin/
+
+# Local planning and design notes
+NOTES.md
