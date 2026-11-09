@@ -1,8 +1,8 @@
-**Work in progress:** Slaude is in early development, the features and design below are planned and may change.
-
 # Slaude
 
 Slaude bridges Slack and a local Claude Code session. Prompt your local Claude from Slack on your phone or anywhere, and get its updates and questions back in the same thread.
+
+> **Work in progress:** Slaude is in early development and not ready for use. The features and design below are planned and may change.
 
 ## What it does
 
@@ -33,6 +33,7 @@ Slack <--> Slaude service <------+
 - **Slack to Claude:** the service routes your reply to your daemon, which writes it to the session's local inbox socket.
 - **Multiple users:** each daemon is tied to one Slack user, so messages and sessions never cross between users.
 - **Local and outbound only:** Claude Code stays on the user's machine, and daemons only make outbound connections, so no inbound ports are needed on laptops.
+- **Slack replies arrive as peer messages:** the daemon delivers them through the session's inbox socket, so Claude treats them as a teammate's request, not as the user typing. They can't approve permission prompts or change configuration. Approvals use the Approve and Deny buttons instead.
 
 ## Requirements
 
