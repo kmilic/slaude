@@ -2,6 +2,7 @@
 //
 //	slaude daemon    connect to the Slaude service and listen for hook events
 //	slaude notify    run by Claude Code hooks: forward the hook's JSON to the daemon
+//	slaude guard-send  PreToolUse hook for SendMessage: always blocks it
 //
 // The daemon remembers each session's inbox socket, forwards hook events to the
 // service, and delivers the service's Slack replies into the right session.
@@ -16,7 +17,6 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
@@ -38,13 +38,15 @@ func main() {
 		notify()
 	case "daemon":
 		daemon()
+	case "guard-send":
+		guardSend()
 	default:
 		usage()
 	}
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: slaude daemon | slaude notify")
+	fmt.Fprintln(os.Stderr, "usage: slaude daemon | slaude notify | slaude guard-send")
 	os.Exit(2)
 }
 
@@ -81,7 +83,16 @@ func daemon() {
 		os.Exit(1)
 	}
 	sessions := &sessionTable{inbox: map[string]string{}}
-	rawLog := openRawLog(log)
+
+	// Raw hook payloads go to ~/.slaude/hooks.log only when SLAUDE_DEBUG_HOOKS=1:
+	// they contain Claude's answers, and the file grows without limit.
+	var rawLog *os.File
+	if debugHooks() {
+		if rawLog = openDebugLog("hooks.log"); rawLog != nil {
+			defer rawLog.Close()
+			log.Info("debug: recording raw hook payloads", "file", "~/.slaude/hooks.log")
+		}
+	}
 
 	// Hook goroutines put events here; runServiceConn is the only reader and
 	// the only writer on the WebSocket. 100 slots absorb bursts, e.g. two
@@ -146,21 +157,6 @@ func (s *sessionTable) get(sessionID string) (string, bool) {
 	defer s.mu.Unlock()
 	p, ok := s.inbox[sessionID]
 	return p, ok
-}
-
-// openRawLog appends every raw hook payload to ~/.slaude/hooks.log, to see the
-// real payload fields Claude Code sends. Local, owner-only.
-func openRawLog(log *slog.Logger) *os.File {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return nil
-	}
-	f, err := os.OpenFile(filepath.Join(home, ".slaude", "hooks.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		log.Warn("raw hook log disabled", "err", err)
-		return nil
-	}
-	return f
 }
 
 // runServiceConn connects to the service, sends queued events in order,
