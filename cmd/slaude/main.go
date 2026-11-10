@@ -3,8 +3,8 @@
 //	slaude daemon    connect to the Slaude service and listen for hook events
 //	slaude notify    run by Claude Code hooks: forward the hook's JSON to the daemon
 //
-// The daemon remembers each session's inbox socket and forwards hook events to
-// the service. Delivering Slack replies into sessions comes in step 7.
+// The daemon remembers each session's inbox socket, forwards hook events to the
+// service, and delivers the service's Slack replies into the right session.
 package main
 
 import (
@@ -25,6 +25,7 @@ import (
 	"github.com/coder/websocket/wsjson"
 
 	"slaude/internal/hook"
+	"slaude/internal/inbox"
 	"slaude/internal/protocol"
 )
 
@@ -117,7 +118,7 @@ func daemon() {
 		}
 	}()
 
-	if err := runServiceConn(ctx, log, events); err != nil && !errors.Is(err, context.Canceled) {
+	if err := runServiceConn(ctx, log, events, sessions); err != nil && !errors.Is(err, context.Canceled) {
 		log.Error("daemon stopped", "err", err)
 		os.Exit(1)
 	}
@@ -162,9 +163,10 @@ func openRawLog(log *slog.Logger) *os.File {
 	return f
 }
 
-// runServiceConn connects to the service, sends queued events in order and
-// returns when the connection is lost or ctx is cancelled. No reconnect yet (step 10).
-func runServiceConn(ctx context.Context, log *slog.Logger, events <-chan protocol.Message) error {
+// runServiceConn connects to the service, sends queued events in order,
+// delivers the service's replies into Claude sessions, and returns when the
+// connection is lost or ctx is cancelled. No reconnect yet (step 10).
+func runServiceConn(ctx context.Context, log *slog.Logger, events <-chan protocol.Message, sessions *sessionTable) error {
 	url := mustEnv(log, "SLAUDE_SERVICE_URL")
 	token := mustEnv(log, "SLAUDE_PAIRING_TOKEN")
 
@@ -181,27 +183,40 @@ func runServiceConn(ctx context.Context, log *slog.Logger, events <-chan protoco
 	}
 	log.Info("connected to service", "url", url)
 
-	// Reader: receives every message from the service (deliver from step 7 on)
-	// and handles each one in this loop. Read blocks until a message arrives, so
-	// it runs in its own goroutine, separate from the writer below.
+	// Reader: receives every message from the service and handles each one in
+	// this loop, so replies are delivered one at a time, in order. Read blocks
+	// until a message arrives, so it runs in its own goroutine, separate from
+	// the writer below.
 	//
 	// readErr carries only errors, never messages: the reader sends at most one
-	// (connection lost, or an error message from the service) and then exits.
-	// One slot lets that send complete even after the writer has returned, so the
-	// reader never blocks forever (no goroutine leak).
+	// (connection lost) and then exits. One slot lets that send complete even
+	// after the writer has returned, so the reader never blocks forever (no
+	// goroutine leak).
 	readErr := make(chan error, 1)
 	go func() {
+		// An error message alone isn't fatal: when the service rejects the
+		// hello, it also closes the connection, and that ends this loop. The
+		// message is kept to explain why.
+		var refused string
 		for {
 			var msg protocol.Message
 			if err := wsjson.Read(ctx, conn, &msg); err != nil {
-				readErr <- fmt.Errorf("connection to service lost: %w", err)
+				if refused != "" {
+					readErr <- fmt.Errorf("service refused: %s", refused)
+				} else {
+					readErr <- fmt.Errorf("connection to service lost: %w", err)
+				}
 				return
 			}
-			if msg.Type == protocol.TypeError {
-				readErr <- fmt.Errorf("service refused: %s", msg.Message)
-				return
+			switch msg.Type {
+			case protocol.TypeDeliver:
+				deliver(ctx, sessions, msg, inbox.Send, log)
+			case protocol.TypeError:
+				refused = msg.Message
+				log.Warn("error from service", "message", msg.Message)
+			default:
+				log.Warn("unexpected message from service", "type", msg.Type)
 			}
-			log.Info("message from service", "type", msg.Type, "session", msg.SessionID) // step 7: deliver
 		}
 	}()
 
