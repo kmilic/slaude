@@ -1,9 +1,11 @@
 // Command slaude-service is the shared Slaude service. It holds the only Slack
-// connection (Socket Mode) and, from step 4 on, the daemons' WebSockets.
+// connection (Socket Mode) and the daemons' WebSockets.
 //
-// Step 2: it echoes DMs from SLAUDE_SLACK_USER.
-// Step 4: it accepts daemons on ws://127.0.0.1:8080/daemon (SLAUDE_LISTEN to change).
-// Step 6: it posts each Claude session's events to its own thread in the user's DM.
+//   - Accepts daemons on ws://127.0.0.1:8080/daemon (SLAUDE_LISTEN to change).
+//   - Posts each Claude session's events to its own thread in the user's DM.
+//   - Sends replies in a session's thread to that user's daemon.
+//
+// The user is SLAUDE_SLACK_USER. Run:
 //
 //	slaude-env                      # loads the tokens from Keychain
 //	go run ./cmd/slaude-service
@@ -87,6 +89,7 @@ func main() {
 		BotUserID:   auth.UserID,
 		AllowedUser: allowedUser,
 		Log:         log,
+		OnReply:     sessionRelay.OnReply, // thread replies -> relay -> daemon
 	}
 
 	sm := socketmode.New(api)
