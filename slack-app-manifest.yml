@@ -1,0 +1,36 @@
+# Slack app manifest for Slaude.
+#
+# Create the app at https://api.slack.com/apps: Create New App > From a manifest,
+# pick your workspace, and paste this file. Then:
+#   1. Basic Information > App-Level Tokens: generate a token with the
+#      connections:write scope (xapp-...). It isn't part of the manifest.
+#   2. Install App: install to the workspace and copy the bot token (xoxb-...).
+display_information:
+  name: Slaude
+  description: Follow and steer your local Claude Code sessions from Slack.
+features:
+  app_home:
+    home_tab_enabled: false
+    # Users talk to Slaude in its DM: each Claude session is a thread there.
+    messages_tab_enabled: true
+    messages_tab_read_only_enabled: false
+  bot_user:
+    display_name: Slaude
+    always_online: true
+oauth_config:
+  scopes:
+    bot:
+      - chat:write   # post session updates and answers
+      - im:history   # receive replies in the DM
+      - im:read
+      - im:write     # open the DM with the user
+settings:
+  event_subscriptions:
+    bot_events:
+      - message.im
+  # Turn on for the planned Approve and Deny buttons.
+  interactivity:
+    is_enabled: false
+  # The service connects out to Slack, so no public URL is needed.
+  socket_mode_enabled: true
+  token_rotation_enabled: false

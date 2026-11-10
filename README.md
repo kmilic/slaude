@@ -54,8 +54,9 @@ Tested on macOS with Claude Code 2.1.316, signed in with a claude.ai account:
 
 - Go 1.23 or later
 - Claude Code, installed and authenticated locally
-- A Slack app with:
-  - **Socket Mode** enabled and an app-level token with `connections:write`, so the service connects out to Slack and needs no public URL
+- A Slack app, created from [`slack-app-manifest.yml`](slack-app-manifest.yml): at https://api.slack.com/apps, choose **Create New App > From a manifest** and paste the file. It sets up:
+  - **Socket Mode**, so the service connects out to Slack and needs no public URL
   - bot token scopes `chat:write`, `im:history`, `im:read` and `im:write`
-  - the bot event `message.im`, and the App Home **Messages tab** enabled so users can DM the bot
-  - *(planned)* **Interactivity**, for the Approve and Deny buttons
+  - the bot event `message.im`, and the App Home **Messages tab** so users can DM the bot
+
+  Then generate an app-level token with `connections:write` under **Basic Information > App-Level Tokens** (it isn't part of the manifest), and install the app to get the bot token. **Interactivity** is off until the planned Approve and Deny buttons need it.
