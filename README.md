@@ -54,4 +54,8 @@ Tested on macOS with Claude Code 2.1.316, signed in with a claude.ai account:
 
 - Go 1.23 or later
 - Claude Code, installed and authenticated locally
-- A Slack app with Socket Mode and Interactivity enabled
+- A Slack app with:
+  - **Socket Mode** enabled and an app-level token with `connections:write`, so the service connects out to Slack and needs no public URL
+  - bot token scopes `chat:write`, `im:history`, `im:read` and `im:write`
+  - the bot event `message.im`, and the App Home **Messages tab** enabled so users can DM the bot
+  - *(planned)* **Interactivity**, for the Approve and Deny buttons
