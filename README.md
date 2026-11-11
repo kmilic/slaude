@@ -46,6 +46,7 @@ Tested on macOS with Claude Code 2.1.316, signed in with a claude.ai account:
 ### Limitations
 
 - **One user and one workspace** per service for now (a fixed pairing token).
+- **You create your own Slack app** and run your own service for now. Planned: one hosted Slaude app that a workspace adds with **Add to Slack**, so only the daemon runs on your machine.
 - **`SendMessage` is disabled** in Slaude sessions, including messages to running subagents and agent-team teammates. Allowing those targets is planned.
 - **Amazon Bedrock is not verified.** Hooks and same-machine messaging are supported on Bedrock from Claude Code 2.1.248, so it should work, but it hasn't been tested.
 - **Long term:** Claude Code's Channels feature is designed for chat bridges like this one and would remove the need for the `SendMessage` guard. It is a research preview that requires claude.ai or Console authentication, so Slaude keeps the inbox-socket path, which also works on Bedrock.
