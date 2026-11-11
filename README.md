@@ -60,3 +60,24 @@ Tested on macOS with Claude Code 2.1.316, signed in with a claude.ai account:
   - the bot event `message.im`, and the App Home **Messages tab** so users can DM the bot
 
   Then generate an app-level token with `connections:write` under **Basic Information > App-Level Tokens** (it isn't part of the manifest), and install the app to get the bot token. **Interactivity** is off until the planned Approve and Deny buttons need it.
+
+## Configuration
+
+Both programs read their settings from environment variables. The tokens are secrets: keep them out of the repo and out of shell history, for example in your system's keychain.
+
+**Service** (`slaude-service`):
+
+| Variable | Required | Value |
+|----------|----------|-------|
+| `SLAUDE_SLACK_APP_TOKEN` | yes | The app-level token (`xapp-...`), for Socket Mode |
+| `SLAUDE_SLACK_BOT_TOKEN` | yes | The bot token (`xoxb-...`), from installing the app |
+| `SLAUDE_SLACK_USER` | yes | Your Slack member ID (`U...`): the only user Slaude talks to |
+| `SLAUDE_PAIRING_TOKEN` | yes | A shared secret the daemon must present, e.g. from `openssl rand -hex 32` |
+| `SLAUDE_LISTEN` | no | Address for daemon connections. Default `127.0.0.1:8080` (this machine only) |
+
+**Daemon** (`slaude daemon`):
+
+| Variable | Required | Value |
+|----------|----------|-------|
+| `SLAUDE_SERVICE_URL` | yes | The service's daemon endpoint, e.g. `ws://127.0.0.1:8080/daemon` |
+| `SLAUDE_PAIRING_TOKEN` | yes | The same value as the service's |

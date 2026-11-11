@@ -244,7 +244,7 @@ func runServiceConn(ctx context.Context, log *slog.Logger, url, token string, ev
 func mustEnv(log *slog.Logger, key string) string {
 	v := os.Getenv(key)
 	if v == "" {
-		log.Error("missing environment variable (run slaude-env first)", "key", key)
+		log.Error("missing environment variable", "key", key)
 		os.Exit(1)
 	}
 	return v
