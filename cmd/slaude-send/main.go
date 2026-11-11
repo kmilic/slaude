@@ -5,8 +5,8 @@
 //	echo "hello" | slaude-send -socket /tmp/cc-socks/1234.sock
 //
 // The socket path is the "Peer address" row in the session's /status. Inside
-// the session (a hook or Bash command), -socket and -token default to
-// CLAUDE_CODE_MESSAGING_SOCKET and CLAUDE_CODE_MESSAGING_TOKEN.
+// the session (a hook or Bash command), -socket defaults to
+// CLAUDE_CODE_MESSAGING_SOCKET.
 package main
 
 import (
@@ -23,7 +23,6 @@ import (
 
 func main() {
 	socket := flag.String("socket", os.Getenv("CLAUDE_CODE_MESSAGING_SOCKET"), "session inbox socket path (the uds: prefix is allowed)")
-	token := flag.String("token", os.Getenv("CLAUDE_CODE_MESSAGING_TOKEN"), "session messaging token (optional on macOS and Linux)")
 	wait := flag.Duration("wait", 2*time.Second, "how long to wait for a reply from the session")
 	flag.Parse()
 
@@ -40,7 +39,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	reply, err := inbox.Send(ctx, *socket, *token, text, *wait)
+	reply, err := inbox.Send(ctx, *socket, text, *wait)
 	if err != nil {
 		fail("%v", err)
 	}

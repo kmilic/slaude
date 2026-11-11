@@ -20,69 +20,119 @@ func (f *fakePoster) Post(_ context.Context, channel, threadTS, text string) (st
 	return "1.0", f.err
 }
 
-func newHandler(p Poster) *Handler {
-	return &Handler{
+type reply struct{ userID, threadTS, text string }
+
+// newHandler returns a handler whose OnReply records each call in replies.
+func newHandler(p Poster) (*Handler, *[]reply) {
+	var replies []reply
+	h := &Handler{
 		Poster:      p,
 		BotUserID:   "UBOT",
 		AllowedUser: "UME",
 		Log:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		OnReply: func(_ context.Context, userID, threadTS, text string) {
+			replies = append(replies, reply{userID, threadTS, text})
+		},
 	}
+	return h, &replies
 }
 
-// userDM is a plain DM from the allowed user; tests change one field at a time.
+// userDM is a plain top-level DM from the allowed user; tests change one field at a time.
 func userDM() Message {
 	return Message{User: "UME", Text: "hi", Channel: "D1", ChannelType: "im"}
 }
 
-func TestOnMessage_EchoesUserDM(t *testing.T) {
-	p := &fakePoster{}
-	newHandler(p).OnMessage(context.Background(), userDM())
+func threadReply() Message {
+	m := userDM()
+	m.Text, m.ThreadTS = "now add tests", "1731080000.1234"
+	return m
+}
 
-	want := post{channel: "D1", threadTS: "", text: "echo: hi"}
+func TestThreadReplyGoesToOnReply(t *testing.T) {
+	p := &fakePoster{}
+	h, replies := newHandler(p)
+
+	h.OnMessage(context.Background(), threadReply())
+
+	want := reply{userID: "UME", threadTS: "1731080000.1234", text: "now add tests"}
+	if len(*replies) != 1 || (*replies)[0] != want {
+		t.Fatalf("replies = %+v, want [%+v]", *replies, want)
+	}
+	if len(p.posts) != 0 {
+		t.Errorf("a thread reply posts nothing itself, got %+v", p.posts)
+	}
+}
+
+func TestBroadcastThreadReplyIsAReply(t *testing.T) {
+	h, replies := newHandler(&fakePoster{})
+	m := threadReply()
+	m.SubType = "thread_broadcast" // "Also send to…" ticked
+
+	h.OnMessage(context.Background(), m)
+
+	if len(*replies) != 1 {
+		t.Fatalf("want the broadcast reply routed, got %+v", *replies)
+	}
+}
+
+func TestTopLevelDMGetsHint(t *testing.T) {
+	p := &fakePoster{}
+	h, replies := newHandler(p)
+
+	h.OnMessage(context.Background(), userDM())
+
+	want := post{channel: "D1", threadTS: "", text: hintText}
 	if len(p.posts) != 1 || p.posts[0] != want {
 		t.Fatalf("posts = %+v, want [%+v]", p.posts, want)
 	}
-}
-
-func TestOnMessage_ThreadReplyEchoesInThread(t *testing.T) {
-	p := &fakePoster{}
-	m := userDM()
-	m.ThreadTS = "1731080000.1234"
-	newHandler(p).OnMessage(context.Background(), m)
-
-	if len(p.posts) != 1 || p.posts[0].threadTS != "1731080000.1234" {
-		t.Fatalf("posts = %+v, want one post in the thread", p.posts)
+	if len(*replies) != 0 {
+		t.Errorf("a top-level DM must not reach OnReply, got %+v", *replies)
 	}
 }
 
-func TestOnMessage_Ignored(t *testing.T) {
+func TestIgnored(t *testing.T) {
 	tests := []struct {
 		name   string
 		change func(*Message)
 	}{
-		{"own bot message (echo loop)", func(m *Message) { m.User = "UBOT" }},
-		{"any bot", func(m *Message) { m.BotID = "B1" }},
+		{"own bot message (loop)", func(m *Message) { m.User = "UBOT" }},
+		{"any bot, e.g. Claude's answer in the thread", func(m *Message) { m.BotID = "B1" }},
 		{"edit", func(m *Message) { m.SubType = "message_changed" }},
+		{"deletion", func(m *Message) { m.SubType = "message_deleted" }},
 		{"not a DM", func(m *Message) { m.ChannelType = "channel" }},
 		{"other user", func(m *Message) { m.User = "USOMEONE" }},
 		{"no user", func(m *Message) { m.User = "" }},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			p := &fakePoster{}
-			m := userDM()
-			tt.change(&m)
-			newHandler(p).OnMessage(context.Background(), m)
-			if len(p.posts) != 0 {
-				t.Fatalf("want no post, got %+v", p.posts)
-			}
-		})
+		for _, base := range []Message{userDM(), threadReply()} {
+			t.Run(tt.name, func(t *testing.T) {
+				p := &fakePoster{}
+				h, replies := newHandler(p)
+				m := base
+				tt.change(&m)
+
+				h.OnMessage(context.Background(), m)
+
+				if len(p.posts) != 0 || len(*replies) != 0 {
+					t.Fatalf("want ignored, got posts %+v, replies %+v", p.posts, *replies)
+				}
+			})
+		}
 	}
 }
 
-func TestOnMessage_PostErrorDoesNotPanic(t *testing.T) {
+func TestReplyWithoutOnReplyDoesNotPanic(t *testing.T) {
+	h, _ := newHandler(&fakePoster{})
+	h.OnReply = nil
+
+	h.OnMessage(context.Background(), threadReply()) // logged, not a panic
+}
+
+func TestHintPostErrorDoesNotPanic(t *testing.T) {
 	p := &fakePoster{err: errors.New("slack down")}
-	newHandler(p).OnMessage(context.Background(), userDM()) // logged, not returned
+	h, _ := newHandler(p)
+
+	h.OnMessage(context.Background(), userDM()) // logged, not returned
 	if len(p.posts) != 1 {
 		t.Fatalf("want one attempt, got %d", len(p.posts))
 	}

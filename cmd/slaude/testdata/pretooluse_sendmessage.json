@@ -1,0 +1,23 @@
+{
+  "session_id": "11111111-2222-3333-4444-555555555555",
+  "transcript_path": "/Users/example/.claude/projects/-private-tmp-slaude-test/11111111-2222-3333-4444-555555555555.jsonl",
+  "cwd": "/private/tmp/slaude-test",
+  "scratchpad_dir": "/private/tmp/claude-501/-private-tmp-slaude-test/11111111-2222-3333-4444-555555555555/scratchpad",
+  "prompt_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+  "permission_mode": "auto",
+  "effort": {
+    "level": "medium"
+  },
+  "hook_event_name": "PreToolUse",
+  "tool_name": "SendMessage",
+  "tool_input": {
+    "to": "other-session",
+    "summary": "Send guard test message",
+    "message": "guard test",
+    "type": "message",
+    "recipient": "other-session",
+    "recipient_kind": "name",
+    "content": "guard test"
+  },
+  "tool_use_id": "toolu_01EXAMPLE"
+}

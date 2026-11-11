@@ -1,10 +1,8 @@
 // Command slaude runs on the user's machine.
 //
-//	slaude daemon    connect to the Slaude service and listen for hook events
-//	slaude notify    run by Claude Code hooks: forward the hook's JSON to the daemon
-//
-// The daemon remembers each session's inbox socket and forwards hook events to
-// the service. Delivering Slack replies into sessions comes in step 7.
+//	slaude daemon      connect to the Slaude service and listen for hook events
+//	slaude notify      run by Claude Code hooks: forward the hook's JSON to the daemon
+//	slaude guard-send  run by the PreToolUse hook for SendMessage: always blocks it
 package main
 
 import (
@@ -16,7 +14,6 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
@@ -37,29 +34,34 @@ func main() {
 		notify()
 	case "daemon":
 		daemon()
+	case "guard-send":
+		guardSend()
 	default:
 		usage()
 	}
 }
 
+// usage exits 1, not the usual 2: for a hook, exit 2 has a meaning (on Stop,
+// it makes Claude keep working).
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: slaude daemon | slaude notify")
-	os.Exit(2)
+	fmt.Fprintln(os.Stderr, "usage: slaude daemon | slaude notify | slaude guard-send")
+	os.Exit(1)
 }
 
-// notify must be fast and must never break Claude: it always exits 0.
+// notify must be fast and must never affect Claude: it always exits 0, even on a panic.
 func notify() {
 	defer os.Exit(0)
 
-	payload, err := io.ReadAll(io.LimitReader(os.Stdin, 10<<20))
-	if err != nil || !json.Valid(payload) {
-		fmt.Fprintln(os.Stderr, "slaude notify: hook input is not JSON, skipped")
+	payload, err := readHookInput(os.Stdin)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "slaude notify: %v, skipped\n", err)
 		return
 	}
 	path, err := hook.DefaultSocketPath()
 	if err != nil {
 		return
 	}
+	// Claude Code sets CLAUDE_CODE_MESSAGING_SOCKET to the session's inbox socket.
 	env := hook.Envelope{
 		InboxSocket: os.Getenv("CLAUDE_CODE_MESSAGING_SOCKET"),
 		Payload:     payload,
@@ -69,8 +71,33 @@ func notify() {
 	}
 }
 
+const mib = 1024 * 1024
+
+// maxHookInput caps how much of a hook's input notify reads into memory.
+const maxHookInput = 10 * mib
+
+// readHookInput reads a hook's JSON input, up to maxHookInput bytes.
+func readHookInput(r io.Reader) ([]byte, error) {
+	// Read one byte past the cap, so input that is too large can be told apart
+	// from input that is exactly at the cap.
+	payload, err := io.ReadAll(io.LimitReader(r, maxHookInput+1))
+	switch {
+	case err != nil:
+		return nil, fmt.Errorf("read hook input: %w", err)
+	case len(payload) > maxHookInput:
+		return nil, fmt.Errorf("hook input is larger than %d MiB", maxHookInput/mib)
+	case !json.Valid(payload):
+		return nil, errors.New("hook input is not JSON")
+	}
+	return payload, nil
+}
+
 func daemon() {
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	// Check the configuration before starting anything.
+	serviceURL := mustEnv(log, "SLAUDE_SERVICE_URL")
+	pairingToken := mustEnv(log, "SLAUDE_PAIRING_TOKEN")
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -80,19 +107,16 @@ func daemon() {
 		os.Exit(1)
 	}
 	sessions := &sessionTable{inbox: map[string]string{}}
-	rawLog := openRawLog(log)
 
-	// Hook goroutines put events here; runServiceConn is the only reader and
-	// the only writer on the WebSocket. 100 slots absorb bursts, e.g. two
-	// sessions finishing at once, while the writer is busy with one send.
+	// events queues hook events for the service. Each hook event is handled in
+	// its own goroutine, but only runServiceConn writes to the WebSocket, so the
+	// hooks hand their events over here. Up to 100 can wait while it's busy;
+	// beyond that, new events are dropped.
 	events := make(chan protocol.Message, 100)
 
 	go func() {
 		log.Info("listening for hook events", "socket", sockPath)
 		if err := hook.Listen(ctx, sockPath, func(env hook.Envelope) {
-			if rawLog != nil {
-				rawLog.Write(append(append([]byte{}, env.Payload...), '\n'))
-			}
 			ev, err := env.Event()
 			if err != nil {
 				log.Warn("ignored hook event", "err", err)
@@ -117,7 +141,7 @@ func daemon() {
 		}
 	}()
 
-	if err := runServiceConn(ctx, log, events); err != nil && !errors.Is(err, context.Canceled) {
+	if err := runServiceConn(ctx, log, serviceURL, pairingToken, events, sessions); err != nil && !errors.Is(err, context.Canceled) {
 		log.Error("daemon stopped", "err", err)
 		os.Exit(1)
 	}
@@ -147,27 +171,10 @@ func (s *sessionTable) get(sessionID string) (string, bool) {
 	return p, ok
 }
 
-// openRawLog appends every raw hook payload to ~/.slaude/hooks.log, to see the
-// real payload fields Claude Code sends. Local, owner-only.
-func openRawLog(log *slog.Logger) *os.File {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return nil
-	}
-	f, err := os.OpenFile(filepath.Join(home, ".slaude", "hooks.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		log.Warn("raw hook log disabled", "err", err)
-		return nil
-	}
-	return f
-}
-
-// runServiceConn connects to the service, sends queued events in order and
-// returns when the connection is lost or ctx is cancelled. No reconnect yet (step 10).
-func runServiceConn(ctx context.Context, log *slog.Logger, events <-chan protocol.Message) error {
-	url := mustEnv(log, "SLAUDE_SERVICE_URL")
-	token := mustEnv(log, "SLAUDE_PAIRING_TOKEN")
-
+// runServiceConn connects to the service, sends queued events in order,
+// delivers the service's replies into Claude sessions, and returns when the
+// connection is lost or ctx is cancelled. No reconnect yet.
+func runServiceConn(ctx context.Context, log *slog.Logger, url, token string, events <-chan protocol.Message, sessions *sessionTable) error {
 	dialCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	conn, _, err := websocket.Dial(dialCtx, url, nil)
@@ -181,33 +188,40 @@ func runServiceConn(ctx context.Context, log *slog.Logger, events <-chan protoco
 	}
 	log.Info("connected to service", "url", url)
 
-	// Reader: receives every message from the service (deliver from step 7 on)
-	// and handles each one in this loop. Read blocks until a message arrives, so
-	// it runs in its own goroutine, separate from the writer below.
-	//
-	// readErr carries only errors, never messages: the reader sends at most one
-	// (connection lost, or an error message from the service) and then exits.
-	// One slot lets that send complete even after the writer has returned, so the
-	// reader never blocks forever (no goroutine leak).
+	// Slack → Claude: the reader goroutine handles the service's messages one at
+	// a time, so replies are delivered in order. readErr has one slot so the
+	// reader can always send its final error and exit, even after the writer
+	// has returned.
 	readErr := make(chan error, 1)
 	go func() {
+		// refused keeps the service's error message, to explain why it then closes the connection.
+		var refused string
 		for {
 			var msg protocol.Message
 			if err := wsjson.Read(ctx, conn, &msg); err != nil {
-				readErr <- fmt.Errorf("connection to service lost: %w", err)
+				if refused != "" {
+					readErr <- fmt.Errorf("service refused: %s", refused)
+				} else {
+					readErr <- fmt.Errorf("connection to service lost: %w", err)
+				}
 				return
 			}
-			if msg.Type == protocol.TypeError {
-				readErr <- fmt.Errorf("service refused: %s", msg.Message)
-				return
+			switch msg.Type {
+			case protocol.TypeDeliver:
+				deliver(ctx, sessions, msg, sendToInbox, log)
+			case protocol.TypeError:
+				refused = msg.Message
+				log.Warn("error from service", "message", msg.Message)
+			default:
+				log.Warn("unexpected message from service", "type", msg.Type)
 			}
-			log.Info("message from service", "type", msg.Type, "session", msg.SessionID) // step 7: deliver
 		}
 	}()
 
-	// Writer: the only goroutine that writes to the WebSocket, one event at a
-	// time, in order. Fire-and-forget: the service sends no reply, so an event
-	// written just before the connection drops can be lost (POC trade-off).
+	// Claude → Slack: the writer is the only goroutine that writes to the
+	// WebSocket, one event at a time, in order. Fire-and-forget: the service
+	// sends no reply, so an event written just before the connection drops can
+	// be lost (POC trade-off).
 	for {
 		select {
 		case <-ctx.Done():
@@ -230,7 +244,7 @@ func runServiceConn(ctx context.Context, log *slog.Logger, events <-chan protoco
 func mustEnv(log *slog.Logger, key string) string {
 	v := os.Getenv(key)
 	if v == "" {
-		log.Error("missing environment variable (run slaude-env first)", "key", key)
+		log.Error("missing environment variable", "key", key)
 		os.Exit(1)
 	}
 	return v

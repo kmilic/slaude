@@ -55,7 +55,7 @@ func TestToProtocolSkips(t *testing.T) {
 // Decodes a real Stop payload logged on 2026-11-09 (shortened), so the JSON
 // field names are checked, not just the struct.
 func TestToProtocolFromRealStopPayload(t *testing.T) {
-	payload := `{"session_id":"361d82a9","transcript_path":"/t.jsonl","cwd":"/private/tmp/slaude-test",
+	payload := `{"session_id":"abcd1234","transcript_path":"/t.jsonl","cwd":"/private/tmp/slaude-test",
 		"hook_event_name":"Stop","stop_hook_active":false,"last_assistant_message":"hi","background_tasks":[]}`
 
 	ev, err := Envelope{Payload: json.RawMessage(payload)}.Event()
@@ -63,7 +63,7 @@ func TestToProtocolFromRealStopPayload(t *testing.T) {
 		t.Fatal(err)
 	}
 	msg, ok := ev.ToProtocol()
-	if !ok || msg.Text != "hi" || msg.SessionID != "361d82a9" || msg.Cwd != "/private/tmp/slaude-test" {
+	if !ok || msg.Text != "hi" || msg.SessionID != "abcd1234" || msg.Cwd != "/private/tmp/slaude-test" {
 		t.Errorf("got %+v ok=%v", msg, ok)
 	}
 }

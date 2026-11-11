@@ -62,46 +62,28 @@ func decode(t *testing.T, line string) map[string]any {
 	return m
 }
 
-func TestSend_WritesAuthThenUserLine(t *testing.T) {
+func TestSend_WritesUserLine(t *testing.T) {
 	path, lines := fakeSession(t, "", false)
 
-	_, err := Send(context.Background(), path, "tok-123", "hello", time.Second)
-	if err != nil {
+	if _, err := Send(context.Background(), path, "hello", time.Second); err != nil {
 		t.Fatal(err)
 	}
 
 	got := <-lines
-	if len(got) != 2 {
-		t.Fatalf("want 2 lines, got %d: %q", len(got), got)
+	if len(got) != 1 {
+		t.Fatalf("want only the user line, got %d: %q", len(got), got)
 	}
-	auth := decode(t, got[0])
-	if auth["type"] != "auth" || auth["token"] != "tok-123" {
-		t.Errorf("auth line = %v", auth)
-	}
-	user := decode(t, got[1])
+	user := decode(t, got[0])
 	msg, _ := user["message"].(map[string]any)
 	if user["type"] != "user" || msg["role"] != "user" || msg["content"] != "hello" {
 		t.Errorf("user line = %v", user)
 	}
 }
 
-func TestSend_NoTokenSkipsAuthLine(t *testing.T) {
-	path, lines := fakeSession(t, "", false)
-
-	if _, err := Send(context.Background(), path, "", "hello", time.Second); err != nil {
-		t.Fatal(err)
-	}
-
-	got := <-lines
-	if len(got) != 1 || decode(t, got[0])["type"] != "user" {
-		t.Fatalf("want only the user line, got %q", got)
-	}
-}
-
 func TestSend_MultilineMessageStaysOneLine(t *testing.T) {
 	path, lines := fakeSession(t, "", false)
 
-	if _, err := Send(context.Background(), path, "", "line one\nline two", time.Second); err != nil {
+	if _, err := Send(context.Background(), path, "line one\nline two", time.Second); err != nil {
 		t.Fatal(err)
 	}
 
@@ -118,7 +100,7 @@ func TestSend_MultilineMessageStaysOneLine(t *testing.T) {
 func TestSend_AcceptsStatusPrefix(t *testing.T) {
 	path, _ := fakeSession(t, "", false)
 
-	if _, err := Send(context.Background(), "uds:"+path, "", "hello", time.Second); err != nil {
+	if _, err := Send(context.Background(), "uds:"+path, "hello", time.Second); err != nil {
 		t.Fatalf("path with uds: prefix should work: %v", err)
 	}
 }
@@ -126,7 +108,7 @@ func TestSend_AcceptsStatusPrefix(t *testing.T) {
 func TestSend_ReturnsReply(t *testing.T) {
 	path, _ := fakeSession(t, "ok\n", false)
 
-	reply, err := Send(context.Background(), path, "", "hello", time.Second)
+	reply, err := Send(context.Background(), path, "hello", time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +120,7 @@ func TestSend_ReturnsReply(t *testing.T) {
 func TestSend_SilentSessionIsNotAnError(t *testing.T) {
 	path, _ := fakeSession(t, "", true)
 
-	reply, err := Send(context.Background(), path, "", "hello", 100*time.Millisecond)
+	reply, err := Send(context.Background(), path, "hello", 100*time.Millisecond)
 	if err != nil {
 		t.Fatalf("a session that replies nothing must not be an error: %v", err)
 	}
@@ -159,7 +141,7 @@ func TestSend_Errors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if _, err := Send(context.Background(), tt.path, "", tt.text, 100*time.Millisecond); err == nil {
+			if _, err := Send(context.Background(), tt.path, tt.text, 100*time.Millisecond); err == nil {
 				t.Error("want an error, got nil")
 			}
 		})

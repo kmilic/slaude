@@ -9,16 +9,16 @@ import (
 
 func TestSessionStartCreatesThread(t *testing.T) {
 	r, p, threads := newRelay()
-	r.OnEvent(ctx, "U1", event("361d82a9-5e4c", "SessionStart", ""))
+	r.OnEvent(ctx, "U1", event("abcd1234-5678", "SessionStart", ""))
 
 	if len(p.posts) != 1 {
 		t.Fatalf("want 1 post, got %+v", p.posts)
 	}
 	got := p.posts[0]
-	if got.channel != "D1" || got.threadTS != "" || got.text != "🟢 Session `361d82a9` started in `/proj`" {
+	if got.channel != "D1" || got.threadTS != "" || got.text != "🟢 Session `abcd1234` started in `/proj`" {
 		t.Errorf("first post = %+v", got)
 	}
-	if ts, ok := threads.ThreadForSession("361d82a9-5e4c"); !ok || ts != "1" {
+	if ts, ok := threads.ThreadForSession("abcd1234-5678"); !ok || ts != "1" {
 		t.Errorf("thread = %q, %v; want linked to 1", ts, ok)
 	}
 }
