@@ -2,7 +2,7 @@
 
 Slaude bridges Slack and a local Claude Code session. Prompt your local Claude from Slack on your phone or anywhere, and get its updates and questions back in the same thread.
 
-> **Work in progress:** Slaude is an early proof of concept, not ready for everyday use. The core loop works (see [Status](#status)); the rest of the features below are planned and may change.
+> **Work in progress**
 
 ## What it does
 
@@ -32,7 +32,7 @@ Slack <--> Slaude service <------+
 - **Multiple users:** each daemon is tied to one Slack user, so messages and sessions never cross between users.
 - **Local and outbound only:** Claude Code stays on the user's machine, and daemons only make outbound connections, so no inbound ports are needed on laptops.
 - **Slack replies arrive as peer messages:** the daemon delivers them through the session's inbox socket, so Claude treats them as a teammate's request, not as the user typing. They can't approve permission prompts or change configuration. Approvals will use Approve and Deny buttons instead.
-- **`SendMessage` is blocked in Slaude sessions:** because a Slack reply looks like a message from another Claude session, Claude sometimes answered it with `SendMessage`, which sent the answer to an unrelated session instead of Slack. Slaude adds a short note to each delivered reply ("answer here, in this session"), and a `PreToolUse` hook (`slaude guard-send`) blocks `SendMessage` as a guarantee. The hook denies before reading its input and runs with `onFailure: "block"`, so it fails closed.
+- **`SendMessage` is blocked in Slaude sessions:** a precaution, so Claude's answers always stay in the session, where Slaude picks them up for Slack. A `PreToolUse` hook (`slaude guard-send`) blocks it, even if the hook itself fails.
 
 ## Status
 
