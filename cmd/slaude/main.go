@@ -25,7 +25,6 @@ import (
 	"github.com/coder/websocket/wsjson"
 
 	"slaude/internal/hook"
-	"slaude/internal/inbox"
 	"slaude/internal/protocol"
 )
 
@@ -206,7 +205,7 @@ func runServiceConn(ctx context.Context, log *slog.Logger, events <-chan protoco
 			}
 			switch msg.Type {
 			case protocol.TypeDeliver:
-				deliver(ctx, sessions, msg, inbox.Send, log)
+				deliver(ctx, sessions, msg, sendToInbox, log)
 			case protocol.TypeError:
 				refused = msg.Message
 				log.Warn("error from service", "message", msg.Message)

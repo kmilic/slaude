@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"time"
 
+	"slaude/internal/inbox"
 	"slaude/internal/protocol"
 )
 
@@ -16,28 +17,26 @@ const (
 	inboxReplyWait = 100 * time.Millisecond
 )
 
-// slackNote goes before every reply delivered into a session. Claude Code shows
-// inbox messages as coming from "another Claude session", and without this
-// note Claude answered that "session" with SendMessage, which delivered the
-// answer to an unrelated session instead of the Slack thread. Slaude only
-// posts Claude's final message of the turn (Stop hook), so the answer must be there.
+// slackNote goes before each Slack reply, so Claude answers in the session (posted by the Stop hook), not with SendMessage.
 const slackNote = "[Slaude] The user sent this from Slack. Answer here, in this session: " +
 	"your final message is posted back to their Slack thread. " +
 	"Don't use SendMessage to reply; no Claude session sent this.\n\n"
 
-// slackPrompt is the text written into the session for a Slack reply.
 func slackPrompt(text string) string { return slackNote + text }
 
-// inboxSender writes text into the inbox socket at path: inbox.Send in the
+// inboxSender writes text into the inbox socket at path: sendToInbox in the
 // daemon, a fake in tests.
-type inboxSender func(ctx context.Context, path, token, text string, replyWait time.Duration) (string, error)
+type inboxSender func(ctx context.Context, path, text string) error
+
+// sendToInbox adapts inbox.Send to inboxSender, so tests can pass a fake.
+func sendToInbox(ctx context.Context, path, text string) error {
+	_, err := inbox.Send(ctx, path, text, inboxReplyWait)
+	return err
+}
 
 // deliver writes a deliver message from the service into the Claude session it
 // names. The reader loop calls it one message at a time, so replies reach a
 // session in the order they were sent.
-//
-// No auth token is sent: the auth line is optional on macOS and Linux, and the
-// message arrives as a peer message either way.
 func deliver(ctx context.Context, sessions *sessionTable, msg protocol.Message, send inboxSender, log *slog.Logger) {
 	path, ok := sessions.get(msg.SessionID)
 	if !ok {
@@ -49,7 +48,7 @@ func deliver(ctx context.Context, sessions *sessionTable, msg protocol.Message, 
 
 	ctx, cancel := context.WithTimeout(ctx, deliverTimeout)
 	defer cancel()
-	if _, err := send(ctx, path, "", slackPrompt(msg.Text), inboxReplyWait); err != nil {
+	if err := send(ctx, path, slackPrompt(msg.Text)); err != nil {
 		log.Error("reply not delivered", "session", msg.SessionID, "inbox", path, "err", err)
 		return
 	}

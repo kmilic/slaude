@@ -7,18 +7,17 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
-	"time"
 
 	"slaude/internal/protocol"
 )
 
-type inboxCall struct{ path, token, text string }
+type inboxCall struct{ path, text string }
 
 // fakeInbox records each call and returns err.
 func fakeInbox(calls *[]inboxCall, err error) inboxSender {
-	return func(_ context.Context, path, token, text string, _ time.Duration) (string, error) {
-		*calls = append(*calls, inboxCall{path, token, text})
-		return "", err
+	return func(_ context.Context, path, text string) error {
+		*calls = append(*calls, inboxCall{path, text})
+		return err
 	}
 }
 
@@ -36,7 +35,7 @@ func TestDeliverToKnownSession(t *testing.T) {
 
 	deliver(context.Background(), sessions, deliverMsg("s2", "now add tests"), fakeInbox(&calls, nil), discard())
 
-	want := inboxCall{path: "/tmp/cc-socks/2.sock", token: "", text: slackPrompt("now add tests")}
+	want := inboxCall{path: "/tmp/cc-socks/2.sock", text: slackPrompt("now add tests")}
 	if len(calls) != 1 || calls[0] != want {
 		t.Fatalf("calls = %+v, want [%+v]", calls, want)
 	}
