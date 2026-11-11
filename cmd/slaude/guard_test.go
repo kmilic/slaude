@@ -33,7 +33,7 @@ func realPayload(t *testing.T) []byte {
 
 func TestGuardDeniesRealSendMessage(t *testing.T) {
 	var out bytes.Buffer
-	if err := guard(bytes.NewReader(realPayload(t)), &out, nil); err != nil {
+	if err := guard(bytes.NewReader(realPayload(t)), &out); err != nil {
 		t.Fatal(err)
 	}
 
@@ -58,7 +58,7 @@ func TestGuardDeniesAnyInput(t *testing.T) {
 	for name, in := range inputs {
 		t.Run(name, func(t *testing.T) {
 			var out bytes.Buffer
-			_ = guard(strings.NewReader(in), &out, nil)
+			_ = guard(strings.NewReader(in), &out)
 			if d := decision(t, out.Bytes()); d["permissionDecision"] != "deny" {
 				t.Errorf("decision = %v, want deny", d)
 			}
@@ -73,7 +73,7 @@ func (failingReader) Read([]byte) (int, error) { return 0, errors.New("broken pi
 
 func TestGuardDeniesBeforeReading(t *testing.T) {
 	var out bytes.Buffer
-	err := guard(failingReader{}, &out, nil)
+	err := guard(failingReader{}, &out)
 
 	if err == nil {
 		t.Error("want the read error reported")
@@ -88,43 +88,6 @@ func TestGuardReasonIsNeutral(t *testing.T) {
 	for _, claim := range []string{"from the user via Slack", "sent this from Slack", "not from another Claude session"} {
 		if strings.Contains(guardReason, claim) {
 			t.Errorf("reason claims the request's source: %q", claim)
-		}
-	}
-}
-
-func TestGuardDebugLogRecordsOnePayloadPerLine(t *testing.T) {
-	var out, debug bytes.Buffer
-	in := append(realPayload(t), '\n') // Claude Code's input ends with a newline
-
-	if err := guard(bytes.NewReader(in), &out, &debug); err != nil {
-		t.Fatal(err)
-	}
-
-	logged := debug.Bytes()
-	if !bytes.HasSuffix(logged, []byte("}\n")) || bytes.HasSuffix(logged, []byte("\n\n")) {
-		t.Errorf("want exactly one trailing newline, got ...%q", logged[max(0, len(logged)-10):])
-	}
-	if !json.Valid(logged) {
-		t.Error("the logged payload must be valid JSON")
-	}
-}
-
-func TestGuardWithoutDebugLogsNothing(t *testing.T) {
-	var out bytes.Buffer
-	// A nil debug writer must be fine: nothing to record, still a deny.
-	if err := guard(bytes.NewReader(realPayload(t)), &out, nil); err != nil {
-		t.Fatal(err)
-	}
-	if d := decision(t, out.Bytes()); d["permissionDecision"] != "deny" {
-		t.Errorf("decision = %v", d)
-	}
-}
-
-func TestDebugHooksSwitch(t *testing.T) {
-	for value, want := range map[string]bool{"": false, "0": false, "true": false, "1": true} {
-		t.Setenv(debugHooksEnv, value)
-		if got := debugHooks(); got != want {
-			t.Errorf("%s=%q: debugHooks() = %v, want %v", debugHooksEnv, value, got, want)
 		}
 	}
 }

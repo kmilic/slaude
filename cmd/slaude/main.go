@@ -83,16 +83,6 @@ func daemon() {
 	}
 	sessions := &sessionTable{inbox: map[string]string{}}
 
-	// Raw hook payloads go to ~/.slaude/hooks.log only when SLAUDE_DEBUG_HOOKS=1:
-	// they contain Claude's answers, and the file grows without limit.
-	var rawLog *os.File
-	if debugHooks() {
-		if rawLog = openDebugLog("hooks.log"); rawLog != nil {
-			defer rawLog.Close()
-			log.Info("debug: recording raw hook payloads", "file", "~/.slaude/hooks.log")
-		}
-	}
-
 	// Hook goroutines put events here; runServiceConn is the only reader and
 	// the only writer on the WebSocket. 100 slots absorb bursts, e.g. two
 	// sessions finishing at once, while the writer is busy with one send.
@@ -101,9 +91,6 @@ func daemon() {
 	go func() {
 		log.Info("listening for hook events", "socket", sockPath)
 		if err := hook.Listen(ctx, sockPath, func(env hook.Envelope) {
-			if rawLog != nil {
-				rawLog.Write(append(append([]byte{}, env.Payload...), '\n'))
-			}
 			ev, err := env.Event()
 			if err != nil {
 				log.Warn("ignored hook event", "err", err)
