@@ -41,8 +41,6 @@ func TestDeliverToKnownSession(t *testing.T) {
 	}
 }
 
-// The note must come first and the user's text must arrive unchanged, so
-// Claude answers in its own turn instead of messaging another session.
 func TestSlackPromptTellsClaudeToAnswerHere(t *testing.T) {
 	got := slackPrompt("what's the weather?")
 
@@ -83,7 +81,7 @@ func TestDeliverErrorDoesNotPanic(t *testing.T) {
 func TestSessionTableKeepsKnownPathWhenEmpty(t *testing.T) {
 	sessions := &sessionTable{inbox: map[string]string{}}
 	sessions.set("s1", "/tmp/cc-socks/1.sock")
-	sessions.set("s1", "") // a hook run without CLAUDE_CODE_MESSAGING_SOCKET
+	sessions.set("s1", "")
 
 	if p, _ := sessions.get("s1"); p != "/tmp/cc-socks/1.sock" {
 		t.Errorf("path = %q, want the known path kept", p)

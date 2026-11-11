@@ -10,38 +10,33 @@ import (
 )
 
 const (
-	// deliverTimeout bounds one write into a session's inbox socket.
+	// deliverTimeout is how long sending one message to a session may take.
 	deliverTimeout = 10 * time.Second
 	// inboxReplyWait is how long to wait for anything the session writes back.
-	// It sends nothing, so keep it short: deliveries run one at a time.
 	inboxReplyWait = 100 * time.Millisecond
 )
 
-// slackNote goes before each Slack reply, so Claude answers in the session (posted by the Stop hook), not with SendMessage.
+// slackNote goes before each Slack reply, to direct Claude to answer in the session.
 const slackNote = "[Slaude] The user sent this from Slack. Answer here, in this session: " +
 	"your final message is posted back to their Slack thread. " +
 	"Don't use SendMessage to reply; no Claude session sent this.\n\n"
 
 func slackPrompt(text string) string { return slackNote + text }
 
-// inboxSender writes text into the inbox socket at path: sendToInbox in the
-// daemon, a fake in tests.
+// inboxSender writes text into the inbox socket at path.
 type inboxSender func(ctx context.Context, path, text string) error
 
-// sendToInbox adapts inbox.Send to inboxSender, so tests can pass a fake.
+// sendToInbox wraps inbox.Send, so tests can pass a fake.
 func sendToInbox(ctx context.Context, path, text string) error {
 	_, err := inbox.Send(ctx, path, text, inboxReplyWait)
 	return err
 }
 
-// deliver writes a deliver message from the service into the Claude session it
-// names. The reader loop calls it one message at a time, so replies reach a
-// session in the order they were sent.
+// deliver writes a Slack reply into its Claude session, one at a time to keep the order.
 func deliver(ctx context.Context, sessions *sessionTable, msg protocol.Message, send inboxSender, log *slog.Logger) {
 	path, ok := sessions.get(msg.SessionID)
 	if !ok {
-		// e.g. the daemon restarted and lost its table. The session's next hook
-		// event tells the daemon its inbox socket again.
+		// e.g. the daemon restarted and lost its table.
 		log.Warn("reply not delivered: unknown session", "session", msg.SessionID)
 		return
 	}
